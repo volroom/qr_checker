@@ -20,7 +20,7 @@ defmodule QrSharer.MixProject do
   def application do
     [
       mod: {QrSharer.Application, []},
-      extra_applications: [:logger, :runtime_tools]
+      extra_applications: [:crypto, :logger, :runtime_tools]
     ]
   end
 
@@ -28,33 +28,33 @@ defmodule QrSharer.MixProject do
   defp elixirc_paths(:test), do: ["lib", "test/support"]
   defp elixirc_paths(_), do: ["lib"]
 
-  # Specifies your project dependencies.
-  #
-  # Type `mix help deps` for examples and options.
   defp deps do
+    # TODO: update deps
     [
+      {:argon2_elixir, "~> 3.0"},
+      {:credo, "~> 1.6"},
+      {:ecto_sql, "~> 3.8"},
+      {:ecto_sqlite3, ">= 0.0.0"},
+      {:esbuild, "~> 0.5", runtime: Mix.env() == :dev},
+      {:floki, ">= 0.33.0", only: :test},
+      {:jason, "~> 1.4"},
       {:phoenix, "~> 1.6.11"},
       {:phoenix_ecto, "~> 4.4"},
-      {:ecto_sql, "~> 3.6"},
-      {:ecto_sqlite3, ">= 0.0.0"},
-      {:phoenix_html, "~> 3.0"},
-      {:phoenix_live_reload, "~> 1.2", only: :dev},
-      {:phoenix_live_view, "~> 0.17.5"},
-      {:floki, ">= 0.30.0", only: :test},
-      {:esbuild, "~> 0.4", runtime: Mix.env() == :dev},
+      {:phoenix_html, "~> 3.2"},
+      {:phoenix_live_reload, "~> 1.3", only: :dev},
+      {:phoenix_live_view, "~> 0.18.0"},
+      {:plug_cowboy, "~> 2.5"},
+      {:qr_code, "~> 2.3"},
+      {:quantum, "~> 3.5"},
+      {:quantum_storage_persistent_ets, "~> 1.0"},
       {:telemetry_metrics, "~> 0.6"},
       {:telemetry_poller, "~> 1.0"},
-      {:jason, "~> 1.2"},
-      {:plug_cowboy, "~> 2.5"}
+      {:timex, "~> 3.7"},
+      {:tzdata, "~> 1.1"},
+      {:uuid, "~> 1.1"}
     ]
   end
 
-  # Aliases are shortcuts or tasks specific to the current project.
-  # For example, to install project dependencies and perform other setup tasks, run:
-  #
-  #     $ mix setup
-  #
-  # See the documentation for `Mix` for more info on aliases.
   defp aliases do
     [
       setup: ["deps.get", "ecto.setup"],
