@@ -1,5 +1,7 @@
 defmodule QrSharerWeb.Router do
+  @moduledoc false
   use QrSharerWeb, :router
+  import QrSharerWeb.Auth
 
   pipeline :browser do
     plug :accepts, ["html"]
@@ -18,10 +20,18 @@ defmodule QrSharerWeb.Router do
     pipe_through :browser
 
     get "/", PageController, :index
+
+    get "/login", LoginController, :login
+    post "/login", LoginController, :login
+    post "/logout", LoginController, :logout
   end
 
-  # Other scopes may use custom stacks.
-  # scope "/api", QrSharerWeb do
-  #   pipe_through :api
-  # end
+  scope "/cards", QrSharerWeb do
+    pipe_through [:browser, :require_user]
+
+    live_session :main, on_mount: {QrSharerWeb.Auth, :set_user} do
+      live "/", CardsLive, :index
+      live "/new", CardsLive, :new
+    end
+  end
 end

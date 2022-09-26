@@ -7,6 +7,8 @@
 # General application configuration
 import Config
 
+config :elixir, :time_zone_database, Tzdata.TimeZoneDatabase
+
 config :qr_sharer,
   ecto_repos: [QrSharer.Repo]
 
@@ -16,6 +18,15 @@ config :qr_sharer, QrSharerWeb.Endpoint,
   render_errors: [view: QrSharerWeb.ErrorView, accepts: ~w(html json), layout: false],
   pubsub_server: QrSharer.PubSub,
   live_view: [signing_salt: "RERnKqCo"]
+
+config :qr_sharer, QrSharer.Scheduler,
+  jobs: [
+    wipe_stats: [
+      schedule: "@daily",
+      task: {QrSharer.LoyaltyCards.Supervisor, :wipe_stats, []}
+    ]
+  ],
+  storage: QuantumStoragePersistentEts
 
 # Configure esbuild (the version is required)
 config :esbuild,
