@@ -5,6 +5,9 @@ defmodule QrSharer.Application do
 
   @impl true
   def start(_type, _args) do
+    # Run migrations
+    QrSharer.Release.migrate()
+
     children = [
       QrSharer.Repo,
       QrSharer.Scheduler,

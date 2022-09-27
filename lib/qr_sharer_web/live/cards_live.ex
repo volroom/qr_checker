@@ -6,11 +6,14 @@ defmodule QrSharerWeb.CardsLive do
   alias QrSharer.LoyaltyCards
   alias QrSharer.LoyaltyCards.LoyaltyCard
 
+  @thirty_seconds_in_ms 30_000
+
   @impl true
   def mount(_params, %{"user_id" => user_id}, socket) do
     # get cards and assign
-    cards = LoyaltyCards.list_cards()
+    cards = Enum.into(LoyaltyCards.list_cards(), %{}, fn card -> {card.id, card} end)
     changeset = LoyaltyCard.changeset(%LoyaltyCard{}, %{})
+    Phoenix.PubSub.subscribe(QrSharer.PubSub, "update_cards")
 
     socket
     |> assign(:cards, cards)
@@ -20,40 +23,61 @@ defmodule QrSharerWeb.CardsLive do
     |> then(&{:ok, &1})
   end
 
+  # TODO: check card update after reveal
   @impl true
-  def handle_event("reveal_qr", %{"reveal_qr" => params}, socket) do
-    socket =
-      case QrSharer.LoyaltyCards.Server.get_qr_code(params["card_id"], socket.assigns.user_id) do
-        {:ok, qr_code} ->
-          socket
-          |> clear_flash()
-          |> assign(:qr_code, qr_code)
+  def handle_event("reveal_qr", %{"reveal_qr" => %{"card_id" => card_id}}, socket) do
+    %{assigns: %{user_id: user_id}} = socket
 
-        {:error, :card_not_cooled_down} ->
-          put_flash(socket, :error, "Please wait for the card to be ready to use again")
+    with {:ok, qr_code, card} <- QrSharer.LoyaltyCards.Server.get_qr_code(card_id, user_id),
+         :ok <- broadcast_card(card) do
+      Process.send_after(self(), :hide_qr, @thirty_seconds_in_ms)
 
-        {:error, :no_uses_remaing} ->
-          put_flash(socket, :error, "Card has no uses remaining, please try another one")
-      end
+      socket
+      |> clear_flash()
+      |> assign(:card, card)
+      |> assign(:qr_code, qr_code)
+      |> then(&{:noreply, &1})
+    else
+      {:error, :card_not_cooled_down} ->
+        show_error(socket, "Please wait for the card to be ready to use again")
 
-    {:noreply, socket}
+      {:error, :no_uses_remaing} ->
+        show_error(socket, "Card has no uses remaining, please try another one")
+
+      _error ->
+        show_error(socket, "Error showing QR code, please refresh and try again")
+    end
   end
 
   def handle_event("save", %{"loyalty_card" => form}, socket) do
-    case LoyaltyCards.create_loyalty_card(form, socket.assigns.user_id) do
-      {:ok, new_card} ->
-        # TODO: clear modal after a delay to prevent screenshotting
-
-        socket
-        |> update(:cards, &[new_card | &1])
-        |> assign(:changeset, LoyaltyCard.changeset(%LoyaltyCard{}, %{}))
-        |> then(&{:noreply, &1})
-
-      {:error, changeset} ->
+    with {:ok, new_card} <- LoyaltyCards.create_loyalty_card(form, socket.assigns.user_id),
+         {:ok, _pid} <- QrSharer.LoyaltyCards.Supervisor.add_card_server(new_card),
+         :ok <- broadcast_card(new_card) do
+      socket
+      |> clear_flash()
+      |> update(:cards, &[new_card | &1])
+      |> assign(:changeset, LoyaltyCard.changeset(%LoyaltyCard{}, %{}))
+      |> then(&{:noreply, &1})
+    else
+      {:error, %Ecto.Changeset{} = changeset} ->
         socket
         |> assign(:changeset, changeset)
         |> then(&{:noreply, &1})
+
+      _error ->
+        show_error(socket, "Error adding card, please refresh and try again")
     end
+  end
+
+  @impl true
+  def handle_info(:hide_qr, socket) do
+    {:noreply, assign(socket, :qr_code, nil)}
+  end
+
+  def handle_info({:update_cards, card}, socket) do
+    socket
+    |> update(:cards, &Map.merge(&1, %{card.id => card}))
+    |> then(&{:noreply, &1})
   end
 
   @impl true
@@ -67,7 +91,7 @@ defmodule QrSharerWeb.CardsLive do
     <.qr_code_modal qr_code={@qr_code} />
     <h2>Loyalty Cards:</h2>
     <ul>
-      <%= for card <- @cards do %>
+      <%= for {_card_id, card} <- @cards do %>
         <.card card={card} user_id={@user_id} />
       <% end %>
     </ul>
@@ -86,6 +110,7 @@ defmodule QrSharerWeb.CardsLive do
     """
   end
 
+  # TODO: stop updates from wiping form
   def add_card_form(assigns) do
     ~H"""
     <.form let={f} for={@changeset} phx-submit="save">
@@ -122,11 +147,15 @@ defmodule QrSharerWeb.CardsLive do
         Last used: <%= format_last_used(@card.last_used)  %>
       </span>
       <br>
-      <%= if @uses_remaining > 0 and LoyaltyCards.card_cooled_down?(@card) do %>
-        <.form let={f} for={:reveal_qr} as={:reveal_qr} phx-submit="reveal_qr">
-          <%= hidden_input f, :card_id, value: @card.id %>
-          <%= submit "Reveal QR Code" %>
-        </.form>
+      <%= if LoyaltyCards.card_cooled_down?(@card) do %>
+        <%= if @uses_remaining > 0 do %>
+          <.form let={f} for={:reveal_qr} as={:reveal_qr} phx-submit="reveal_qr">
+            <%= hidden_input f, :card_id, value: @card.id %>
+            <%= submit "Reveal QR Code" %>
+          </.form>
+        <% end %>
+      <% else %>
+        <strong>Please wait for card to be ready again</strong>
       <% end %>
     </.hidable_section>
     """
@@ -163,4 +192,14 @@ defmodule QrSharerWeb.CardsLive do
   end
 
   defp get_toggle_id, do: "toggle-#{UUID.uuid4()}"
+
+  defp broadcast_card(card) do
+    Phoenix.PubSub.broadcast_from(QrSharer.PubSub, self(), "update_cards", {:update_cards, card})
+  end
+
+  defp show_error(socket, error_msg) do
+    socket
+    |> put_flash(:error, error_msg)
+    |> then(&{:noreply, &1})
+  end
 end

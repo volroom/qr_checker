@@ -31,7 +31,7 @@ defmodule QrSharer.LoyaltyCards.Server do
       if LoyaltyCards.card_cooled_down?(card) do
         {:ok, updated_card} = LoyaltyCards.use_card(card)
         card = Map.merge(card, Map.from_struct(updated_card))
-        {:reply, {:ok, card.qr_code}, card}
+        {:reply, {:ok, card.qr_code, updated_card}, card}
       else
         {:reply, {:error, :card_not_cooled_down}, card}
       end
