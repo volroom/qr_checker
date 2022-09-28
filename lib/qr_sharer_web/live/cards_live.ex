@@ -103,7 +103,7 @@ defmodule QrSharerWeb.CardsLive do
     <%= if @qr_code != nil do %>
       <div id="myModal" class="modal">
         <div class="modal-content">
-          <img src={"data:image/svg+xml;base64, #{@qr_code}"} style="width:100%;height:100%" />
+          <img class="qr-code" src={"data:image/svg+xml;base64, #{@qr_code}"} />
         </div>
       </div>
     <% end %>
